@@ -5699,6 +5699,23 @@ test('static hosting serves index and denies dotfiles with security headers', as
         const home = await client.request('GET', '/');
         assert.equal(home.response.status, 200);
         assert.match(home.text, /<title>IELTS Atlas<\/title>/);
+        const validViewHome = await client.request('GET', '/?view=more');
+        assert.equal(validViewHome.response.status, 200);
+        assert.match(validViewHome.text, /<title>IELTS Atlas<\/title>/);
+        const uppercaseValidViewHome = await client.request('GET', '/?view=OVERVIEW');
+        assert.equal(uppercaseValidViewHome.response.status, 200);
+        assert.match(uppercaseValidViewHome.text, /<title>IELTS Atlas<\/title>/);
+        for (const invalidRootView of [
+            '/?view=overview/admin',
+            '/?view=admin/',
+            '/?view=admin',
+            '/?view=auth',
+            '/?view='
+        ]) {
+            const response = await client.request('GET', invalidRootView);
+            assert.equal(response.response.status, 404, `${invalidRootView} should be rejected`);
+            assert.doesNotMatch(response.text, /<title>IELTS Atlas<\/title>/);
+        }
         assert.equal(home.response.headers.get('x-content-type-options'), 'nosniff');
         const homeCsp = home.response.headers.get('content-security-policy') || '';
         assert.match(homeCsp, /default-src 'self'/);

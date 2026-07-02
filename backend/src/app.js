@@ -33,10 +33,16 @@ const SESSION_VERIFIER_ISSUED_AT_KEY = 'sessionVerifierIssuedAt';
 const SESSION_VERIFIER_ROTATE_KEY = Symbol('sessionVerifierRotate');
 const SESSION_VERIFIER_PROTECTED_PATHS = ['/api/auth', '/api/practice-records', '/api/admin', '/admin', '/auth'];
 const AUTH_SESSION_KEY = 'authSession';
+const ROOT_QUERY_VIEW_ALLOWLIST = new Set(['overview', 'browse', 'practice', 'settings', 'more']);
 
 function parseBoolean(value, fallback = false) {
     if (value === undefined || value === null || value === '') return fallback;
     return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
+}
+
+function isAllowedRootQueryView(value) {
+    const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+    return /^[a-z][a-z0-9-]{0,31}$/.test(normalized) && ROOT_QUERY_VIEW_ALLOWLIST.has(normalized);
 }
 
 function parseCookieHeader(header) {
@@ -1513,6 +1519,9 @@ function createApp(options = {}) {
     });
 
     app.get('/', (req, res) => {
+        if (Object.prototype.hasOwnProperty.call(req.query || {}, 'view') && !isAllowedRootQueryView(req.query.view)) {
+            return res.status(404).type('text/plain').send('Not found');
+        }
         res.sendFile(path.join(repoRoot, 'index.html'));
     });
 
