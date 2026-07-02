@@ -893,10 +893,10 @@ async function enableTotpForCurrentSession(client) {
     };
 }
 
-function createFullCookieReplay(client) {
+function createFullCookieReplay(client, sourceSession = client) {
     const replay = client.createSession();
-    replay.setCookie('ielts.sid', client.getCookie('ielts.sid'));
-    replay.setCookie('ielts.sv', client.getCookie('ielts.sv'));
+    replay.setCookie('ielts.sid', sourceSession.getCookie('ielts.sid'));
+    replay.setCookie('ielts.sv', sourceSession.getCookie('ielts.sv'));
     return replay;
 }
 
@@ -1176,6 +1176,52 @@ test('business account session API lists safe metadata and revokes other session
         const listedAfter = await client.request('GET', '/api/account/sessions');
         assert.equal(listedAfter.response.status, 200);
         assert(listedAfter.json.sessions.every((record) => record.current === true));
+    } finally {
+        await client.close();
+    }
+});
+
+test('admin session API lists target sessions and revokes copied user sessions', async () => {
+    const client = await createClient();
+    try {
+        const adminUser = await seedAdmin(client, 'session_admin', 'StrongPass1');
+        await client.csrf();
+        const adminLogin = await client.request('POST', '/api/auth/login', {
+            username: 'session_admin',
+            password: 'StrongPass1'
+        });
+        assert.equal(adminLogin.response.status, 200);
+        await enableTotpForCurrentSession(client);
+
+        const target = client.createSession();
+        const targetCreated = await register(target, 'session_target', 'StrongPass1');
+        assert.equal(targetCreated.response.status, 201);
+        const targetReplay = createFullCookieReplay(client, target);
+        const targetBefore = await targetReplay.request('GET', '/api/auth/me');
+        assert.equal(targetBefore.response.status, 200);
+
+        const targetSessions = await client.request('GET', `/api/admin/users/${encodeURIComponent(targetCreated.json.user.id)}/sessions`, undefined, { csrf: false });
+        assert.equal(targetSessions.response.status, 200);
+        assert.equal(targetSessions.json.user.id, targetCreated.json.user.id);
+        assert(targetSessions.json.sessions.length >= 1);
+        assert.doesNotMatch(JSON.stringify(targetSessions.json), /session_handle_hash|handleHash|ip_hash|user_agent_summary/i);
+        const targetSessionId = targetSessions.json.sessions[0].id;
+
+        const revokeTarget = await client.request('DELETE', `/api/admin/users/${encodeURIComponent(targetCreated.json.user.id)}/sessions/${encodeURIComponent(targetSessionId)}`, {});
+        assert.equal(revokeTarget.response.status, 200);
+        const targetAfterRevoke = await target.request('GET', '/api/auth/me');
+        assert.equal(targetAfterRevoke.response.status, 401);
+        const replayAfterRevoke = await targetReplay.request('GET', '/api/auth/me');
+        assert.equal(replayAfterRevoke.response.status, 401);
+
+        const adminStillActive = await client.request('GET', '/api/auth/me');
+        assert.equal(adminStillActive.response.status, 200);
+        const adminSessions = await client.request('GET', `/api/admin/users/${encodeURIComponent(adminUser.id)}/sessions`, undefined, { csrf: false });
+        assert.equal(adminSessions.response.status, 200);
+        const currentAdminSession = adminSessions.json.sessions.find((record) => record.current);
+        assert(currentAdminSession);
+        const revokeCurrentAdmin = await client.request('DELETE', `/api/admin/users/${encodeURIComponent(adminUser.id)}/sessions/${encodeURIComponent(currentAdminSession.id)}`, {});
+        assert.equal(revokeCurrentAdmin.response.status, 400);
     } finally {
         await client.close();
     }

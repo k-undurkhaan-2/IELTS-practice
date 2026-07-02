@@ -1421,6 +1421,7 @@ function createApp(options = {}) {
     app.use('/api/account', createAccountSessionRouter());
     app.use('/api/admin', createAdminRouter({
         store: adminStore,
+        authSessionStore,
         requireAdminTotp,
         rateLimit: options.adminRateLimit || options.rateLimit,
         totpVerificationMaxAgeMs

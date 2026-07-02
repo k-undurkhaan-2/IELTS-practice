@@ -19,6 +19,10 @@ const {
     markSessionTotpVerified,
     resolveTotpVerificationMaxAgeMs
 } = require('./totp');
+const {
+    isAuthSessionId,
+    serializeAuthSession
+} = require('./authSessions');
 
 const ADMIN_SEARCH_QUERY_MAX_LENGTH = 80;
 
@@ -2147,6 +2151,7 @@ function createAdminRouter(options = {}) {
     const express = require('express');
     const router = express.Router();
     const store = options.store || new PostgresAdminStore(options.db);
+    const authSessionStore = options.authSessionStore || null;
     const requireAdminTotp = options.requireAdminTotp || ((req, res, next) => next());
     const checkRateLimit = options.checkRateLimit || createRateLimiter(options.rateLimit);
     const totpVerificationMaxAgeMs = resolveTotpVerificationMaxAgeMs({
@@ -2305,6 +2310,72 @@ function createAdminRouter(options = {}) {
                 return res.status(404).json({ error: 'User not found' });
             }
             return res.json(stats);
+        } catch (error) {
+            return next(error);
+        }
+    });
+
+    router.get('/users/:userId/sessions', async (req, res, next) => {
+        try {
+            const userId = parseUserIdParam(req.params.userId);
+            const user = await store.getUser(userId);
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            const records = authSessionStore && typeof authSessionStore.listSessionsForUser === 'function'
+                ? await authSessionStore.listSessionsForUser(userId)
+                : [];
+            return res.json({
+                user,
+                sessions: records.map((record) => serializeAuthSession(record, {
+                    currentId: req.session?.authSession?.id
+                })).filter(Boolean)
+            });
+        } catch (error) {
+            return next(error);
+        }
+    });
+
+    router.post('/users/:userId/sessions/revoke-others', verifyCsrfToken, async (req, res, next) => {
+        try {
+            const userId = parseUserIdParam(req.params.userId);
+            const user = await store.getUser(userId);
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            const exceptId = userId === req.session?.user?.id ? req.session?.authSession?.id || null : null;
+            const revoked = authSessionStore && typeof authSessionStore.revokeSessionsForUser === 'function'
+                ? await authSessionStore.revokeSessionsForUser(userId, exceptId)
+                : 0;
+            rotateSessionVerifier(req);
+            return res.json({ ok: true, revoked });
+        } catch (error) {
+            return next(error);
+        }
+    });
+
+    router.delete('/users/:userId/sessions/:sessionId', verifyCsrfToken, async (req, res, next) => {
+        try {
+            const userId = parseUserIdParam(req.params.userId);
+            const sessionId = String(req.params.sessionId || '').trim();
+            if (!isAuthSessionId(sessionId)) {
+                return res.status(404).json({ error: 'Session not found' });
+            }
+            if (userId === req.session?.user?.id && sessionId === req.session?.authSession?.id) {
+                return res.status(400).json({ error: 'Use logout to end the current admin session' });
+            }
+            const user = await store.getUser(userId);
+            if (!user) {
+                return res.status(404).json({ error: 'User not found' });
+            }
+            const revoked = authSessionStore && typeof authSessionStore.revokeSessionForUser === 'function'
+                ? await authSessionStore.revokeSessionForUser(userId, sessionId)
+                : null;
+            if (!revoked) {
+                return res.status(404).json({ error: 'Session not found' });
+            }
+            rotateSessionVerifier(req);
+            return res.json({ ok: true });
         } catch (error) {
             return next(error);
         }
