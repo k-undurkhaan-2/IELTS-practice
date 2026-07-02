@@ -973,6 +973,47 @@
                                 TOTP 二次验证
                             </button>
                         </div>
+                        <div
+                            class="settings-session-manager"
+                            id="settings-session-manager"
+                            hidden
+                        >
+                            <div class="settings-session-manager__header">
+                                <div>
+                                    <h4>Active sessions</h4>
+                                    <p class="hero-panel__muted">
+                                        Review current sign-ins and revoke devices that should no longer stay signed in.
+                                    </p>
+                                </div>
+                                <button
+                                    class="btn hero-btn"
+                                    id="settings-sessions-refresh-btn"
+                                    type="button"
+                                >
+                                    Refresh
+                                </button>
+                            </div>
+                            <div
+                                class="settings-session-list"
+                                id="settings-sessions-list"
+                                role="list"
+                            ></div>
+                            <div class="hero-settings-actions">
+                                <button
+                                    class="btn hero-btn settings-session-manager__revoke-others"
+                                    id="settings-sessions-revoke-others-btn"
+                                    type="button"
+                                >
+                                    Sign out other sessions
+                                </button>
+                            </div>
+                            <p
+                                class="settings-session-manager__status"
+                                id="settings-sessions-status"
+                                role="status"
+                                aria-live="polite"
+                            ></p>
+                        </div>
                     </div>
 
                     <div class="hero-panel hero-section reading-candidate-code-panel">

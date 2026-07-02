@@ -3435,9 +3435,14 @@ test('admin shell and business account menu do not link back through the busines
     assert.doesNotMatch(mainIndex, /\/auth\/business\/account|Open auth account center|account-username-form|account-password-form|account-delete-form/);
     assert.doesNotMatch(mainIndex, /Account Management/);
     assert(mainIndex.includes('id="settings-password-btn"'));
+    assert(mainIndex.includes('id="settings-session-manager"'));
+    assert(mainIndex.includes('id="settings-sessions-revoke-others-btn"'));
     assert(authOverlay.includes("const normalizedAction = action === 'totp' ? 'totp' : 'password';"));
     assert(authOverlay.includes('/auth/business/${normalizedAction}/start?return_to='));
     assert(authOverlay.includes('/auth/business/logout?return_to='));
+    assert(authOverlay.includes("apiClient.request('/api/account/sessions'"));
+    assert(authOverlay.includes("apiClient.request('/api/account/sessions/revoke-others'"));
+    assert.doesNotMatch(authOverlay, /session_handle_hash|user_agent_summary|ip_hash/);
 });
 
 test('business settings password and TOTP actions require scoped auth state', async () => {

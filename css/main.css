@@ -8843,6 +8843,138 @@ body.blue-dark-mode .practice-timer-field input[type="number"] {
     justify-self: end;
 }
 
+#settings-view .settings-session-manager {
+    display: grid;
+    gap: var(--space-md);
+    width: 100%;
+    margin-top: var(--space-md);
+    padding-top: var(--space-md);
+    border-top: 1px solid rgba(148, 163, 184, 0.26);
+}
+
+#settings-view .settings-session-manager[hidden] {
+    display: none !important;
+}
+
+#settings-view .settings-session-manager__header,
+#settings-view .settings-session-card {
+    display: grid;
+    gap: var(--space-sm);
+}
+
+#settings-view .settings-session-manager__header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+}
+
+#settings-view .settings-session-manager__header h4 {
+    margin: 0 0 4px;
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 800;
+}
+
+#settings-view .settings-session-list {
+    display: grid;
+    gap: 10px;
+}
+
+#settings-view .settings-session-list__empty,
+#settings-view .settings-session-manager__status {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.92rem;
+}
+
+#settings-view .settings-session-manager__status[data-kind="error"] {
+    color: #b42318;
+}
+
+#settings-view .settings-session-manager__status[data-kind="success"] {
+    color: #166534;
+}
+
+#settings-view .settings-session-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    padding: 12px;
+}
+
+#settings-view .settings-session-card__head,
+#settings-view .settings-session-card__meta,
+#settings-view .settings-session-card__badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+#settings-view .settings-session-card__head {
+    min-width: 0;
+}
+
+#settings-view .settings-session-card__head strong {
+    overflow: hidden;
+    max-width: 100%;
+    color: var(--text-primary);
+    font-size: 0.96rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#settings-view .settings-session-card__meta {
+    grid-column: 1;
+    color: var(--text-secondary);
+    font-size: 0.84rem;
+}
+
+#settings-view .settings-session-card__badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    border-radius: 999px;
+    background: rgba(37, 99, 235, 0.1);
+    color: #1d4ed8;
+    font-size: 0.74rem;
+    font-weight: 800;
+    padding: 0 8px;
+}
+
+#settings-view .settings-session-card__badge.is-current {
+    background: rgba(22, 101, 52, 0.12);
+    color: #166534;
+}
+
+#settings-view .settings-session-card__actions {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+}
+
+#settings-view .settings-session-card__revoke {
+    min-width: 128px;
+}
+
+body.bloom-dark-mode #settings-view .settings-session-card,
+body.blue-dark-mode #settings-view .settings-session-card {
+    background: rgba(15, 23, 42, 0.48);
+    border-color: rgba(148, 163, 184, 0.26);
+}
+
+body.bloom-dark-mode #settings-view .settings-session-card__badge,
+body.blue-dark-mode #settings-view .settings-session-card__badge {
+    background: rgba(96, 165, 250, 0.18);
+    color: #bfdbfe;
+}
+
+body.bloom-dark-mode #settings-view .settings-session-card__badge.is-current,
+body.blue-dark-mode #settings-view .settings-session-card__badge.is-current {
+    background: rgba(34, 197, 94, 0.18);
+    color: #bbf7d0;
+}
+
 body.bloom-dark-mode #settings-view .settings-sidebar,
 body.blue-dark-mode #settings-view .settings-sidebar {
     background: rgba(15, 23, 42, 0.68);

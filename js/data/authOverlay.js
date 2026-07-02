@@ -196,6 +196,8 @@
         let pendingRecoveryUser = null;
         let setOverlayMode = null;
         let clearOverlaySensitiveFields = null;
+        let sessionListLoadedForUserId = '';
+        let sessionListLoading = false;
 
         function ensureUi() {
             if (overlay) {
@@ -333,6 +335,8 @@
             settings.setAttribute('role', 'menuitem');
             const settingsPassword = window.document.getElementById('settings-password-btn');
             const settingsTotp = window.document.getElementById('settings-totp-btn');
+            const settingsSessionsRefresh = window.document.getElementById('settings-sessions-refresh-btn');
+            const settingsSessionsRevokeOthers = window.document.getElementById('settings-sessions-revoke-others-btn');
             const logout = createAccountMenuItem('button', 'remote-auth-account__menu-item remote-auth-account__logout', '退出', '结束当前登录会话');
             logout.type = 'button';
             logout.setAttribute('role', 'menuitem');
@@ -539,6 +543,20 @@
             if (settingsTotp) {
                 settingsTotp.addEventListener('click', () => startBusinessAuthAction('totp'));
             }
+            if (settingsSessionsRefresh) {
+                settingsSessionsRefresh.addEventListener('click', () => {
+                    loadAccountSessions({ force: true }).catch((requestError) => {
+                        setSessionManagerStatus(formatRemoteAuthError(requestError), 'error');
+                    });
+                });
+            }
+            if (settingsSessionsRevokeOthers) {
+                settingsSessionsRevokeOthers.addEventListener('click', () => {
+                    revokeOtherAccountSessions().catch((requestError) => {
+                        setSessionManagerStatus(formatRemoteAuthError(requestError), 'error');
+                    });
+                });
+            }
 
             accountToggle.addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -678,6 +696,170 @@
             });
         }
 
+        function getSessionManagerNodes() {
+            return {
+                manager: window.document.getElementById('settings-session-manager'),
+                list: window.document.getElementById('settings-sessions-list'),
+                refresh: window.document.getElementById('settings-sessions-refresh-btn'),
+                revokeOthers: window.document.getElementById('settings-sessions-revoke-others-btn'),
+                status: window.document.getElementById('settings-sessions-status')
+            };
+        }
+
+        function setSessionManagerStatus(message, kind = 'info') {
+            const { status } = getSessionManagerNodes();
+            if (!status) {
+                return;
+            }
+            status.textContent = sanitizeRemoteAuthMessage(message || '');
+            status.dataset.kind = kind;
+            if (!status.textContent) {
+                status.removeAttribute('data-kind');
+            }
+        }
+
+        function setSessionManagerLoading(loading) {
+            const { refresh, revokeOthers } = getSessionManagerNodes();
+            if (refresh) {
+                refresh.disabled = loading;
+            }
+            if (revokeOthers) {
+                revokeOthers.disabled = loading;
+            }
+        }
+
+        function formatSessionDate(value) {
+            if (!value) {
+                return 'Unknown';
+            }
+            const date = new Date(value);
+            if (Number.isNaN(Number(date))) {
+                return 'Unknown';
+            }
+            return date.toLocaleString();
+        }
+
+        function formatSessionAudience(value) {
+            const text = String(value || '').trim().toLowerCase();
+            if (text === 'admin') {
+                return 'Admin';
+            }
+            if (text === 'auth') {
+                return 'Auth';
+            }
+            return 'Business';
+        }
+
+        function renderAccountSessions(payload) {
+            const { list } = getSessionManagerNodes();
+            if (!list) {
+                return;
+            }
+            const sessions = Array.isArray(payload?.sessions) ? payload.sessions : [];
+            list.textContent = '';
+            if (!sessions.length) {
+                list.append(createElement('p', 'settings-session-list__empty', 'No active sessions found.'));
+                return;
+            }
+            sessions.forEach((session) => {
+                const card = createElement('article', 'settings-session-card');
+                card.setAttribute('role', 'listitem');
+                const head = createElement('div', 'settings-session-card__head');
+                const title = createElement('strong', null, session.deviceLabel || 'Signed-in browser');
+                const badges = createElement('span', 'settings-session-card__badges');
+                badges.append(createElement('span', 'settings-session-card__badge', formatSessionAudience(session.audience)));
+                if (session.current) {
+                    badges.append(createElement('span', 'settings-session-card__badge is-current', 'Current'));
+                }
+                head.append(title, badges);
+
+                const meta = createElement('div', 'settings-session-card__meta');
+                meta.append(
+                    createElement('span', null, `Last seen ${formatSessionDate(session.lastSeenAt || session.createdAt)}`),
+                    createElement('span', null, `Expires ${formatSessionDate(session.expiresAt)}`)
+                );
+
+                const actions = createElement('div', 'settings-session-card__actions');
+                const revoke = createElement('button', 'btn hero-btn settings-session-card__revoke', session.current ? 'Current session' : 'Sign out');
+                revoke.type = 'button';
+                revoke.disabled = Boolean(session.current || !session.id);
+                revoke.addEventListener('click', () => {
+                    revokeAccountSession(session.id).catch((requestError) => {
+                        setSessionManagerStatus(formatRemoteAuthError(requestError), 'error');
+                    });
+                });
+                actions.append(revoke);
+                card.append(head, meta, actions);
+                list.append(card);
+            });
+        }
+
+        async function loadAccountSessions(options = {}) {
+            const { manager, list } = getSessionManagerNodes();
+            if (!manager || !list || !apiClient || typeof apiClient.request !== 'function') {
+                return;
+            }
+            if (sessionListLoading) {
+                return;
+            }
+            const currentUserId = options.userId || apiClient.user?.id || '';
+            if (!options.force && sessionListLoadedForUserId === currentUserId && list.childElementCount > 0) {
+                return;
+            }
+            manager.hidden = false;
+            sessionListLoading = true;
+            setSessionManagerLoading(true);
+            if (!options.silent) {
+                setSessionManagerStatus('Loading sessions...');
+            }
+            try {
+                const payload = await apiClient.request('/api/account/sessions', { method: 'GET', csrf: false });
+                sessionListLoadedForUserId = currentUserId;
+                renderAccountSessions(payload);
+                setSessionManagerStatus('Sessions refreshed.', 'success');
+            } catch (requestError) {
+                if (requestError && requestError.status === 401) {
+                    sessionListLoadedForUserId = '';
+                    updateAccount(null);
+                }
+                throw requestError;
+            } finally {
+                sessionListLoading = false;
+                setSessionManagerLoading(false);
+            }
+        }
+
+        async function revokeAccountSession(sessionId) {
+            const normalizedId = String(sessionId || '');
+            if (!normalizedId) {
+                return;
+            }
+            if (typeof window.confirm === 'function' && !window.confirm('Sign out this session?')) {
+                return;
+            }
+            setSessionManagerStatus('Signing out selected session...');
+            await apiClient.request(`/api/account/sessions/${encodeURIComponent(normalizedId)}`, {
+                method: 'DELETE'
+            });
+            sessionListLoadedForUserId = '';
+            await loadAccountSessions({ force: true, silent: true });
+            setSessionManagerStatus('Selected session signed out.', 'success');
+        }
+
+        async function revokeOtherAccountSessions() {
+            if (typeof window.confirm === 'function' && !window.confirm('Sign out all other sessions for this account?')) {
+                return;
+            }
+            setSessionManagerStatus('Signing out other sessions...');
+            await apiClient.request('/api/account/sessions/revoke-others', {
+                method: 'POST',
+                body: {}
+            });
+            sessionListLoadedForUserId = '';
+            await loadAccountSessions({ force: true, silent: true });
+            setSessionManagerStatus('Other sessions signed out.', 'success');
+        }
+
         function updateAccount(user) {
             ensureUi();
             const name = account.querySelector('.remote-auth-account__name');
@@ -691,6 +873,8 @@
             const profileName = window.document.getElementById('account-profile-name');
             const profileRole = window.document.getElementById('account-profile-role');
             const profileAvatar = window.document.getElementById('account-profile-avatar');
+            const sessionManager = window.document.getElementById('settings-session-manager');
+            const sessionList = window.document.getElementById('settings-sessions-list');
             if (user && user.username) {
                 const displayRole = user.role === 'admin' ? 'Admin' : 'User';
                 const initial = getAccountInitial(user.username);
@@ -724,6 +908,14 @@
                 }
                 if (settingsTotp) {
                     settingsTotp.hidden = false;
+                }
+                if (sessionManager) {
+                    sessionManager.hidden = false;
+                    if (user.id && sessionListLoadedForUserId !== user.id) {
+                        loadAccountSessions({ silent: true, userId: user.id }).catch((requestError) => {
+                            setSessionManagerStatus(formatRemoteAuthError(requestError), 'error');
+                        });
+                    }
                 }
                 account.hidden = false;
                 syncAccountStats();
@@ -759,6 +951,14 @@
                 if (settingsTotp) {
                     settingsTotp.hidden = true;
                 }
+                if (sessionManager) {
+                    sessionManager.hidden = true;
+                }
+                if (sessionList) {
+                    sessionList.textContent = '';
+                }
+                sessionListLoadedForUserId = '';
+                setSessionManagerStatus('');
                 setAccountMenuOpen(false);
                 account.hidden = true;
             }
