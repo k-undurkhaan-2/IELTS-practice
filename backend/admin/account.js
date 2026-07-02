@@ -192,7 +192,7 @@
     function formatSessionAudience(value) {
         const text = String(value || '').trim().toLowerCase();
         if (text === 'admin') return 'Admin';
-        if (text === 'auth') return 'Auth';
+        if (text === 'auth') return 'Authentication session';
         return 'Business';
     }
 

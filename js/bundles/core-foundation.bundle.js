@@ -5403,7 +5403,7 @@ storageManager.ready
                 return 'Admin';
             }
             if (text === 'auth') {
-                return 'Auth';
+                return 'Authentication session';
             }
             return 'Business';
         }
@@ -5436,6 +5436,13 @@ storageManager.ready
                     createElement('span', null, `Last seen ${formatSessionDate(session.lastSeenAt || session.createdAt)}`),
                     createElement('span', null, `Expires ${formatSessionDate(session.expiresAt)}`)
                 );
+                if (String(session.audience || '').trim().toLowerCase() === 'auth') {
+                    meta.append(createElement(
+                        'span',
+                        'settings-session-card__hint',
+                        'Used for sign-in, security settings, and onion handoff.'
+                    ));
+                }
 
                 const actions = createElement('div', 'settings-session-card__actions');
                 const revoke = createElement('button', 'btn hero-btn settings-session-card__revoke', session.current ? 'Current session' : 'Sign out');

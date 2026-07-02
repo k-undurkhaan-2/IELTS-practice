@@ -3194,6 +3194,7 @@ test('admin shell and business account menu do not link back through the busines
     assert(adminAccountScript.includes('/practice-records?limit='));
     assert(adminAccountScript.includes('/sessions/revoke-others'));
     assert(adminAccountScript.includes('/sessions/${encodeURIComponent(normalizedId)}'));
+    assert(adminAccountScript.includes('Authentication session'));
     assert(adminAccountScript.includes('/auth/admin/start?return_to=/admin/account'));
     assert(adminAccountScript.includes('/auth/admin/logout?return_to=/admin/account'));
     assert.doesNotMatch(adminAccountScript, /session_handle_hash|user_agent_summary|ip_hash/);
@@ -3447,6 +3448,8 @@ test('admin shell and business account menu do not link back through the busines
     assert(authOverlay.includes('/auth/business/logout?return_to='));
     assert(authOverlay.includes("apiClient.request('/api/account/sessions'"));
     assert(authOverlay.includes("apiClient.request('/api/account/sessions/revoke-others'"));
+    assert(authOverlay.includes('Authentication session'));
+    assert(authOverlay.includes('Used for sign-in, security settings, and onion handoff.'));
     assert.doesNotMatch(authOverlay, /session_handle_hash|user_agent_summary|ip_hash/);
 });
 
