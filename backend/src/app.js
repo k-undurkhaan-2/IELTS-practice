@@ -574,6 +574,52 @@ function escapeHtmlAttribute(value) {
         .replace(/>/g, '&gt;');
 }
 
+function escapeHtmlText(value) {
+    return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+function sendNotFoundPage(res, options = {}) {
+    const heading = escapeHtmlText(options.heading || 'Page not found');
+    const message = escapeHtmlText(options.message || 'The requested page is not available.');
+    const actionLabel = escapeHtmlText(options.actionLabel || 'Back to IELTS Atlas');
+    const actionHref = escapeHtmlAttribute(options.actionHref || '/');
+    return res.status(404).type('html').send(`<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>404 Page Not Found</title>
+  <style>
+    :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: #f5f7fb; color: #111827; }
+    main { width: min(100%, 440px); padding: 28px; border: 1px solid rgba(148, 163, 184, 0.28); border-radius: 8px; background: rgba(255, 255, 255, 0.94); box-shadow: 0 20px 55px rgba(15, 23, 42, 0.12); }
+    p:first-child { margin: 0 0 8px; color: #2563eb; font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    h1 { margin: 0 0 12px; font-size: 1.5rem; line-height: 1.2; }
+    p { color: #475569; line-height: 1.5; }
+    a { display: inline-flex; align-items: center; min-height: 40px; margin-top: 12px; color: #fff; background: #2563eb; border-radius: 6px; padding: 0 14px; text-decoration: none; font-weight: 700; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #020617; color: #e5e7eb; }
+      main { border-color: rgba(148, 163, 184, 0.25); background: rgba(15, 23, 42, 0.94); }
+      p:first-child { color: #93c5fd; }
+      p { color: #cbd5e1; }
+      a { background: #3b82f6; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <p>IELTS Atlas</p>
+    <h1>${heading}</h1>
+    <p>${message}</p>
+    <a href="${actionHref}">${actionLabel}</a>
+  </main>
+</body>
+</html>`);
+}
+
 function injectBaseHref(html, baseHref) {
     const baseTag = `<base href="${escapeHtmlAttribute(baseHref)}">`;
     if (/<base\s/i.test(html)) {
@@ -1515,12 +1561,16 @@ function createApp(options = {}) {
         res.sendFile(path.join(authRoot, 'totp.css'));
     });
     app.get(['/auth/account', '/auth/account/', '/auth/account.js', '/auth/account.css'], (req, res) => {
-        res.status(404).type('text/plain').send('Not found');
+        sendNotFoundPage(res, {
+            message: 'Account management is available from the business settings page.'
+        });
     });
 
     app.get('/', (req, res) => {
         if (Object.prototype.hasOwnProperty.call(req.query || {}, 'view') && !isAllowedRootQueryView(req.query.view)) {
-            return res.status(404).type('text/plain').send('Not found');
+            return sendNotFoundPage(res, {
+                message: 'This business view is not available.'
+            });
         }
         res.sendFile(path.join(repoRoot, 'index.html'));
     });
@@ -1559,7 +1609,9 @@ function createApp(options = {}) {
         try {
             const target = resolveListeningExam(req.params.examId);
             if (!target) {
-                return res.status(404).type('text/plain').send('Not found');
+                return sendNotFoundPage(res, {
+                    message: 'This listening practice route is not available.'
+                });
             }
             const wrapperPath = path.join(repoRoot, 'assets', 'generated', 'listening-exams', 'listening-practice-unified.html');
             return sendListeningWrapper(res, wrapperPath, {

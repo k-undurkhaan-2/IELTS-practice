@@ -2981,6 +2981,9 @@ test('admin dashboard redirects anonymous users through auth handoff', async () 
 
         const authAccountPage = await client.request('GET', '/auth/account', undefined, { redirect: 'manual' });
         assert.equal(authAccountPage.response.status, 404);
+        assert.match(authAccountPage.response.headers.get('content-type') || '', /text\/html/);
+        assert.match(authAccountPage.text, /404 Page Not Found/);
+        assert.match(authAccountPage.text, /Account management is available from the business settings page/);
         const authAccountScript = await client.request('GET', '/auth/account.js', undefined, { redirect: 'manual' });
         assert.equal(authAccountScript.response.status, 404);
         const authAccountStyles = await client.request('GET', '/auth/account.css', undefined, { redirect: 'manual' });
@@ -5714,6 +5717,9 @@ test('static hosting serves index and denies dotfiles with security headers', as
         ]) {
             const response = await client.request('GET', invalidRootView);
             assert.equal(response.response.status, 404, `${invalidRootView} should be rejected`);
+            assert.match(response.response.headers.get('content-type') || '', /text\/html/);
+            assert.match(response.text, /404 Page Not Found/);
+            assert.match(response.text, /This business view is not available/);
             assert.doesNotMatch(response.text, /<title>IELTS Atlas<\/title>/);
         }
         assert.equal(home.response.headers.get('x-content-type-options'), 'nosniff');
@@ -5904,6 +5910,9 @@ test('static hosting serves index and denies dotfiles with security headers', as
 
         const missingPrettyListening = await client.request('GET', '/practice/listening/not-in-manifest');
         assert.equal(missingPrettyListening.response.status, 404);
+        assert.match(missingPrettyListening.response.headers.get('content-type') || '', /text\/html/);
+        assert.match(missingPrettyListening.text, /404 Page Not Found/);
+        assert.match(missingPrettyListening.text, /This listening practice route is not available/);
 
         const unsafePrettyListening = await client.request('GET', '/practice/listening/%2e%2e%2fsecret');
         assert.equal(unsafePrettyListening.response.status, 400);
