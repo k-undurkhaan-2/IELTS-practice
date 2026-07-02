@@ -95,6 +95,17 @@ class ExamSystemApp {
         return String(value == null ? '' : value).replace(/["\\]/g, '\\$&');
     }
 
+    const NAVIGATION_VIEW_ALLOWLIST = new Set(['overview', 'browse', 'practice', 'account', 'settings', 'more', 'vocab']);
+    const INITIAL_QUERY_VIEW_ALLOWLIST = new Set(['overview', 'browse', 'practice', 'settings', 'more']);
+
+    function normalizeNavigationViewName(value, fallback = 'overview', allowedViews = NAVIGATION_VIEW_ALLOWLIST) {
+        const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
+        if (!/^[a-z][a-z0-9-]{0,31}$/.test(normalized)) {
+            return fallback;
+        }
+        return allowedViews.has(normalized) ? normalized : fallback;
+    }
+
     function isAppUnsafeAttributeName(name) {
         const key = String(name || '').toLowerCase();
         return key.startsWith('on') || key === 'srcdoc';
@@ -736,31 +747,37 @@ class ExamSystemApp {
         setupInitialView() {
             const urlParams = new URLSearchParams(window.location.search);
             const urlView = urlParams.get('view');
-            const initialView = urlView || 'overview';
+            const initialView = normalizeNavigationViewName(urlView, 'overview', INITIAL_QUERY_VIEW_ALLOWLIST);
+            if (urlView && String(urlView).trim().toLowerCase() !== initialView) {
+                const url = new URL(window.location);
+                url.searchParams.set('view', initialView);
+                window.history.replaceState({}, '', url);
+            }
             this.navigateToView(initialView);
         },
         navigateToView(viewName) {
-            if (this.currentView === viewName) {
+            const normalizedViewName = normalizeNavigationViewName(viewName);
+            if (this.currentView === normalizedViewName) {
                 return;
             }
             document.querySelectorAll('.view').forEach((view) => {
                 view.classList.remove('active');
             });
-            const targetView = document.getElementById(`${viewName}-view`);
+            const targetView = document.getElementById(`${normalizedViewName}-view`);
             if (targetView) {
                 targetView.classList.add('active');
-                this.currentView = viewName;
+                this.currentView = normalizedViewName;
                 document.querySelectorAll('.nav-btn').forEach((btn) => {
                     btn.classList.remove('active');
                 });
-                const activeNavBtn = document.querySelector(`[data-view="${escapeCssSelectorValue(viewName)}"]`);
+                const activeNavBtn = document.querySelector(`[data-view="${escapeCssSelectorValue(normalizedViewName)}"]`);
                 if (activeNavBtn) {
                     activeNavBtn.classList.add('active');
                 }
                 const url = new URL(window.location);
-                url.searchParams.set('view', viewName);
+                url.searchParams.set('view', normalizedViewName);
                 window.history.replaceState({}, '', url);
-                this.onViewActivated(viewName);
+                this.onViewActivated(normalizedViewName);
             }
         },
         onViewActivated(viewName) {

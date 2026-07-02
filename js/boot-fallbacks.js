@@ -175,13 +175,23 @@
     return key === '__proto__' || key === 'prototype' || key === 'constructor';
   }
 
+  var FALLBACK_NAVIGATION_VIEW_ALLOWLIST = ['overview', 'browse', 'practice', 'account', 'settings', 'more', 'vocab'];
+
+  function normalizeFallbackViewName(value, fallback) {
+    var normalized = (typeof value === 'string' ? value : '').trim().toLowerCase();
+    if (!/^[a-z][a-z0-9-]{0,31}$/.test(normalized)) {
+      return fallback || 'overview';
+    }
+    return FALLBACK_NAVIGATION_VIEW_ALLOWLIST.indexOf(normalized) !== -1 ? normalized : (fallback || 'overview');
+  }
+
   // Fallback for navigation
   if (typeof window.showView !== 'function') {
     window.showView = function (viewName, resetCategory) {
       if (typeof document === 'undefined') {
         return;
       }
-      var normalized = (typeof viewName === 'string' && viewName) ? viewName : 'overview';
+      var normalized = normalizeFallbackViewName(viewName, 'overview');
       var target = document.getElementById(normalized + '-view');
       if (!target) {
         console.warn('[Fallback] 未找到视图节点');
@@ -1921,7 +1931,7 @@
     };
   }
 
-  const VALID_INITIAL_VIEWS = ['overview', 'browse', 'practice', 'history', 'settings'];
+  const VALID_INITIAL_VIEWS = ['overview', 'browse', 'practice', 'settings', 'more'];
 
   function readQueryView() {
     try {

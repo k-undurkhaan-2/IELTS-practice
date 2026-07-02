@@ -90,9 +90,17 @@ assert(
 const appSource = fs.readFileSync(path.join(repoRoot, 'js/app.js'), 'utf8');
 assert(
     appSource.includes('function escapeCssSelectorValue') &&
-    appSource.includes('document.querySelector(`[data-view="${escapeCssSelectorValue(viewName)}"]`)') &&
+    appSource.includes('document.querySelector(`[data-view="${escapeCssSelectorValue(normalizedViewName)}"]`)') &&
     !appSource.includes('document.querySelector(`[data-view="${viewName}"]`)'),
     'app navigation must escape dynamic view names before using them in selectors'
+);
+assert(
+    appSource.includes("const NAVIGATION_VIEW_ALLOWLIST = new Set(['overview', 'browse', 'practice', 'account', 'settings', 'more', 'vocab'])") &&
+    appSource.includes("const INITIAL_QUERY_VIEW_ALLOWLIST = new Set(['overview', 'browse', 'practice', 'settings', 'more'])") &&
+    appSource.includes('function normalizeNavigationViewName') &&
+    appSource.includes('normalizeNavigationViewName(urlView, \'overview\', INITIAL_QUERY_VIEW_ALLOWLIST)') &&
+    appSource.includes('const normalizedViewName = normalizeNavigationViewName(viewName)'),
+    'app navigation must allowlist query and navigation view names before activating views'
 );
 assert(
     appSource.includes('const escapedCategory = escapeCssSelectorValue(category)') &&
@@ -109,6 +117,13 @@ assert(
     bootFallbacksSource.includes('navContainer.querySelector(\'[data-view="\' + escapeFallbackCssSelectorValue(normalized) + \'"]\')') &&
     !bootFallbacksSource.includes('navContainer.querySelector(\'[data-view="\' + normalized + \'"]\')'),
     'boot fallback navigation must escape dynamic view names before using them in selectors'
+);
+assert(
+    bootFallbacksSource.includes("FALLBACK_NAVIGATION_VIEW_ALLOWLIST = ['overview', 'browse', 'practice', 'account', 'settings', 'more', 'vocab']") &&
+    bootFallbacksSource.includes('function normalizeFallbackViewName') &&
+    bootFallbacksSource.includes("var normalized = normalizeFallbackViewName(viewName, 'overview')") &&
+    bootFallbacksSource.includes("const VALID_INITIAL_VIEWS = ['overview', 'browse', 'practice', 'settings', 'more']"),
+    'boot fallback must normalize view names and reject invalid query view variants'
 );
 
 const unifiedReadingPageSource = fs.readFileSync(path.join(repoRoot, 'js/runtime/unifiedReadingPage.js'), 'utf8');
