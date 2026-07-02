@@ -8,14 +8,16 @@ const connectPgSimple = require('connect-pg-simple');
 const helmet = require('helmet');
 
 const db = require('./db');
-const { PostgresAuthStore, createAuthRouter, getUserSecurityEpoch, publicUser, requireAuth, requireAdmin } = require('./auth');
+const { PostgresAuthStore, createAuthRouter, getUserSecurityEpoch, publicUser, requireAuth, requireAdmin, verifyCsrfToken } = require('./auth');
 const { PostgresAuthHandoffStore, createAuthHandoffRouter, verifySignedAuthState } = require('./authHandoff');
 const {
     PostgresAuthSessionStore,
     createAuthSessionHandle,
     createAuthSessionId,
     hashAuthSessionHandle,
-    normalizeAuthSessionAudience
+    isAuthSessionId,
+    normalizeAuthSessionAudience,
+    serializeAuthSession
 } = require('./authSessions');
 const { PostgresAdminStore, createAdminRouter, createTrafficMiddleware } = require('./admin');
 const { PostgresPracticeRecordStore, createPracticeRecordsRouter } = require('./practiceRecords');
@@ -31,7 +33,7 @@ const SESSION_VERIFIER_COOKIE_NAME = 'ielts.sv';
 const SESSION_VERIFIER_HASH_KEY = 'sessionVerifierHash';
 const SESSION_VERIFIER_ISSUED_AT_KEY = 'sessionVerifierIssuedAt';
 const SESSION_VERIFIER_ROTATE_KEY = Symbol('sessionVerifierRotate');
-const SESSION_VERIFIER_PROTECTED_PATHS = ['/api/auth', '/api/practice-records', '/api/admin', '/admin', '/auth'];
+const SESSION_VERIFIER_PROTECTED_PATHS = ['/api/auth', '/api/account', '/api/practice-records', '/api/admin', '/admin', '/auth'];
 const AUTH_SESSION_KEY = 'authSession';
 const ROOT_QUERY_VIEW_ALLOWLIST = new Set(['overview', 'browse', 'practice', 'settings', 'more']);
 
@@ -1245,9 +1247,71 @@ function createApp(options = {}) {
         }
     }
 
-    app.use(['/api/auth', '/api/practice-records', '/api/admin', '/admin', '/auth'], noStoreSensitiveApiMiddleware);
+    function createAccountSessionRouter() {
+        const router = express.Router();
+
+        router.use(requireAuth);
+
+        router.get('/sessions', async (req, res, next) => {
+            try {
+                const records = authSessionStore && typeof authSessionStore.listSessionsForUser === 'function'
+                    ? await authSessionStore.listSessionsForUser(req.session.user.id)
+                    : [];
+                return res.json({
+                    sessions: records.map((record) => serializeAuthSession(record, {
+                        currentId: req.session[AUTH_SESSION_KEY]?.id
+                    })).filter(Boolean)
+                });
+            } catch (error) {
+                return next(error);
+            }
+        });
+
+        router.post('/sessions/revoke-others', verifyCsrfToken, async (req, res, next) => {
+            try {
+                const currentId = req.session[AUTH_SESSION_KEY]?.id || null;
+                const revoked = authSessionStore && typeof authSessionStore.revokeSessionsForUser === 'function'
+                    ? await authSessionStore.revokeSessionsForUser(req.session.user.id, currentId)
+                    : 0;
+                if (typeof req.rotateSessionVerifier === 'function') {
+                    req.rotateSessionVerifier();
+                }
+                return res.json({ ok: true, revoked });
+            } catch (error) {
+                return next(error);
+            }
+        });
+
+        router.delete('/sessions/:sessionId', verifyCsrfToken, async (req, res, next) => {
+            try {
+                const sessionId = String(req.params.sessionId || '').trim();
+                if (!isAuthSessionId(sessionId)) {
+                    return res.status(404).json({ error: 'Session not found' });
+                }
+                if (sessionId === req.session[AUTH_SESSION_KEY]?.id) {
+                    return res.status(400).json({ error: 'Use logout to end the current session' });
+                }
+                const revoked = authSessionStore && typeof authSessionStore.revokeSessionForUser === 'function'
+                    ? await authSessionStore.revokeSessionForUser(req.session.user.id, sessionId)
+                    : null;
+                if (!revoked) {
+                    return res.status(404).json({ error: 'Session not found' });
+                }
+                if (typeof req.rotateSessionVerifier === 'function') {
+                    req.rotateSessionVerifier();
+                }
+                return res.json({ ok: true });
+            } catch (error) {
+                return next(error);
+            }
+        });
+
+        return router;
+    }
+
+    app.use(['/api/auth', '/api/account', '/api/practice-records', '/api/admin', '/admin', '/auth'], noStoreSensitiveApiMiddleware);
     app.use(attachAuthSessionControls);
-    app.use(['/api/auth', '/api/practice-records', '/api/admin', '/admin', '/auth'], refreshSessionUser);
+    app.use(['/api/auth', '/api/account', '/api/practice-records', '/api/admin', '/admin', '/auth'], refreshSessionUser);
     app.use(SESSION_VERIFIER_PROTECTED_PATHS, attachSessionVerifierControls);
     app.use(SESSION_VERIFIER_PROTECTED_PATHS, requireSessionVerifier);
     app.use(SESSION_VERIFIER_PROTECTED_PATHS, requireAuthSessionRegistry);
@@ -1354,6 +1418,7 @@ function createApp(options = {}) {
     app.use('/api/practice-records', createPracticeRecordsRouter({
         store: practiceStore
     }));
+    app.use('/api/account', createAccountSessionRouter());
     app.use('/api/admin', createAdminRouter({
         store: adminStore,
         requireAdminTotp,

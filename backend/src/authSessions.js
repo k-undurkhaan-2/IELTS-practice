@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 
 const AUTH_SESSION_AUDIENCES = new Set(['business', 'admin', 'auth']);
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function normalizeAuthSessionAudience(value) {
     const text = String(value || '').trim().toLowerCase();
@@ -17,6 +18,61 @@ function createAuthSessionHandle() {
 
 function hashAuthSessionHandle(secret, handle) {
     return crypto.createHmac('sha256', String(secret || '')).update(String(handle || '')).digest('hex');
+}
+
+function isAuthSessionId(value) {
+    return UUID_PATTERN.test(String(value || '').trim());
+}
+
+function toIsoString(value) {
+    if (!value) {
+        return null;
+    }
+    const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
+    return Number.isFinite(time) ? new Date(time).toISOString() : null;
+}
+
+function summarizeAuthSessionDevice(userAgentSummary) {
+    const source = String(userAgentSummary || '').toLowerCase();
+    const browser = source.includes('edg/') || source.includes('edge/')
+        ? 'Edge'
+        : source.includes('firefox/')
+            ? 'Firefox'
+            : source.includes('chrome/') || source.includes('chromium/')
+                ? 'Chrome'
+                : source.includes('safari/')
+                    ? 'Safari'
+                    : 'Browser';
+    const platform = source.includes('windows')
+        ? 'Windows'
+        : source.includes('android')
+            ? 'Android'
+            : source.includes('iphone') || source.includes('ipad') || source.includes('ios')
+                ? 'iOS'
+                : source.includes('mac os') || source.includes('macintosh')
+                    ? 'macOS'
+                    : source.includes('linux')
+                        ? 'Linux'
+                        : 'Unknown device';
+    return `${browser} on ${platform}`;
+}
+
+function serializeAuthSession(record, options = {}) {
+    if (!record) {
+        return null;
+    }
+    const currentId = String(options.currentId || '');
+    return {
+        id: record.id,
+        audience: normalizeAuthSessionAudience(record.audience) || 'business',
+        current: Boolean(currentId && record.id === currentId),
+        createdAt: toIsoString(record.created_at),
+        lastSeenAt: toIsoString(record.last_seen_at),
+        expiresAt: toIsoString(record.expires_at),
+        revokedAt: toIsoString(record.revoked_at),
+        totpVerified: Boolean(record.totp_verified_at),
+        deviceLabel: summarizeAuthSessionDevice(record.user_agent_summary)
+    };
 }
 
 class PostgresAuthSessionStore {
@@ -79,6 +135,22 @@ class PostgresAuthSessionStore {
         return result.rows[0] || null;
     }
 
+    async revokeSessionForUser(userId, sessionId) {
+        if (!userId || !isAuthSessionId(sessionId)) {
+            return null;
+        }
+        const result = await this.db.query(
+            `UPDATE auth_sessions
+             SET revoked_at = COALESCE(revoked_at, now())
+             WHERE id = $1
+               AND user_id = $2
+             RETURNING id, user_id, audience, created_at, last_seen_at, revoked_at, expires_at,
+                       security_epoch, last_verifier_rotated_at, totp_verified_at, user_agent_summary, ip_hash`,
+            [sessionId, userId]
+        );
+        return result.rows[0] || null;
+    }
+
     async revokeSessionsForUser(userId, exceptId = null) {
         if (!userId) {
             return 0;
@@ -98,6 +170,32 @@ class PostgresAuthSessionStore {
             params
         );
         return result.rowCount || 0;
+    }
+
+    async listSessionsForUser(userId, options = {}) {
+        if (!userId) {
+            return [];
+        }
+        const limit = Math.max(1, Math.min(100, Number.parseInt(options.limit, 10) || 50));
+        const includeRevoked = Boolean(options.includeRevoked);
+        const includeExpired = Boolean(options.includeExpired);
+        const conditions = ['user_id = $1'];
+        if (!includeRevoked) {
+            conditions.push('revoked_at IS NULL');
+        }
+        if (!includeExpired) {
+            conditions.push('expires_at > now()');
+        }
+        const result = await this.db.query(
+            `SELECT id, user_id, audience, created_at, last_seen_at, revoked_at, expires_at,
+                    security_epoch, last_verifier_rotated_at, totp_verified_at, user_agent_summary, ip_hash
+             FROM auth_sessions
+             WHERE ${conditions.join(' AND ')}
+             ORDER BY last_seen_at DESC, created_at DESC
+             LIMIT $2`,
+            [userId, limit]
+        );
+        return result.rows;
     }
 }
 
@@ -150,6 +248,20 @@ class MemoryAuthSessionStore {
         return { ...record };
     }
 
+    async revokeSessionForUser(userId, sessionId) {
+        if (!userId || !isAuthSessionId(sessionId)) {
+            return null;
+        }
+        const record = this.sessions.get(sessionId);
+        if (!record || record.user_id !== userId) {
+            return null;
+        }
+        if (!record.revoked_at) {
+            record.revoked_at = new Date().toISOString();
+        }
+        return { ...record };
+    }
+
     async revokeSessionsForUser(userId, exceptId = null) {
         let count = 0;
         for (const record of this.sessions.values()) {
@@ -160,6 +272,27 @@ class MemoryAuthSessionStore {
         }
         return count;
     }
+
+    async listSessionsForUser(userId, options = {}) {
+        if (!userId) {
+            return [];
+        }
+        const limit = Math.max(1, Math.min(100, Number.parseInt(options.limit, 10) || 50));
+        const includeRevoked = Boolean(options.includeRevoked);
+        const includeExpired = Boolean(options.includeExpired);
+        const now = Date.now();
+        return Array.from(this.sessions.values())
+            .filter((record) => record.user_id === userId)
+            .filter((record) => includeRevoked || !record.revoked_at)
+            .filter((record) => includeExpired || new Date(record.expires_at).getTime() > now)
+            .sort((left, right) => {
+                const leftSeen = new Date(left.last_seen_at || left.created_at).getTime();
+                const rightSeen = new Date(right.last_seen_at || right.created_at).getTime();
+                return rightSeen - leftSeen;
+            })
+            .slice(0, limit)
+            .map((record) => ({ ...record }));
+    }
 }
 
 module.exports = {
@@ -169,5 +302,7 @@ module.exports = {
     createAuthSessionHandle,
     createAuthSessionId,
     hashAuthSessionHandle,
-    normalizeAuthSessionAudience
+    isAuthSessionId,
+    normalizeAuthSessionAudience,
+    serializeAuthSession
 };

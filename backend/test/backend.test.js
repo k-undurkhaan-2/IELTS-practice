@@ -1136,6 +1136,51 @@ test('authenticated APIs require an active server-side auth session registry ent
     }
 });
 
+test('business account session API lists safe metadata and revokes other sessions', async () => {
+    const client = await createClient();
+    try {
+        const created = await register(client, 'session_owner', 'StrongPass1');
+        assert.equal(created.response.status, 201);
+
+        const otherSession = client.createSession();
+        await otherSession.csrf();
+        const otherLogin = await otherSession.request('POST', '/api/auth/login', {
+            username: 'session_owner',
+            password: 'StrongPass1'
+        });
+        assert.equal(otherLogin.response.status, 200);
+
+        const listed = await client.request('GET', '/api/account/sessions');
+        assert.equal(listed.response.status, 200);
+        assert(Array.isArray(listed.json.sessions));
+        assert(listed.json.sessions.length >= 2);
+        assert(listed.json.sessions.some((record) => record.current === true));
+        assert(listed.json.sessions.some((record) => record.current === false));
+        const listText = JSON.stringify(listed.json);
+        assert.doesNotMatch(listText, /session_handle_hash|handleHash|ip_hash|user_agent_summary/i);
+        for (const record of listed.json.sessions) {
+            assert.match(record.id, /^[0-9a-f-]{36}$/i);
+            assert(['business', 'admin', 'auth'].includes(record.audience));
+            assert.equal(typeof record.deviceLabel, 'string');
+        }
+
+        const revokeOthers = await client.request('POST', '/api/account/sessions/revoke-others', {});
+        assert.equal(revokeOthers.response.status, 200);
+        assert(revokeOthers.json.revoked >= 1);
+
+        const currentStillActive = await client.request('GET', '/api/auth/me');
+        assert.equal(currentStillActive.response.status, 200);
+        const otherAfterRevoke = await otherSession.request('GET', '/api/auth/me');
+        assert.equal(otherAfterRevoke.response.status, 401);
+
+        const listedAfter = await client.request('GET', '/api/account/sessions');
+        assert.equal(listedAfter.response.status, 200);
+        assert(listedAfter.json.sessions.every((record) => record.current === true));
+    } finally {
+        await client.close();
+    }
+});
+
 test('security epoch invalidates copied full cookie jars after account security changes', async () => {
     const client = await createClient();
     try {
@@ -3215,6 +3260,9 @@ test('admin shell and business account menu do not link back through the busines
             '/api/auth/csrf',
             '/api/auth/me',
             '/api/auth/logout',
+            '/api/account/sessions',
+            '/api/account/sessions/revoke-others',
+            '/api/account/sessions/00000000-0000-4000-8000-000000000000',
             '/api/practice-records',
             '/auth/business/start',
             '/auth/business/password/start',
@@ -3233,6 +3281,7 @@ test('admin shell and business account menu do not link back through the busines
             '/api/admin',
             '/API/ADMIN',
             '/api/admin/users',
+            '/api/account',
             '/auth/admin/start',
             '/AUTH/ADMIN/START',
             '/auth/password',
@@ -3275,6 +3324,7 @@ test('admin shell and business account menu do not link back through the busines
             '/api/admin',
             '/API/ADMIN',
             '/api/admin/users',
+            '/api/account/sessions',
             '/api/practice-records',
             '/api/site-content',
             '/api/export',
@@ -3318,6 +3368,7 @@ test('admin shell and business account menu do not link back through the busines
             '/auth/login',
             '/api/auth/login',
             '/api/auth/totp/setup',
+            '/api/account/sessions',
             '/api/practice-records',
             '/api/site-content',
             '/practice/listening/example',
